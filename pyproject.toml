@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ota_sim"
 version = "0.1.0"
-description = "Simulated over-the-air RF/IQ channel (path loss, fading, AWGN, latency) over a network, between two arbitrary peers"
+description = "Simulated over-the-air radio links between two arbitrary peers: complex-IQ RF channel (path loss, fading, AWGN, latency) over a network, plus a narrowband FM transceiver audio-path model"
 license = "MIT"
 requires-python = ">=3.9"
 dependencies = ["numpy"]

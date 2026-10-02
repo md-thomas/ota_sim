@@ -86,6 +86,82 @@ All of `OTALink`'s parameters are exposed as CLI flags on
 - `--latency-ms` / `--jitter-ms` - the tunable delay knobs.
 - `--seed` - reproducible runs.
 
+## FM radio link model (`ota_sim.fm`)
+
+`OTALink` adds noise to complex baseband IQ, which is what an SDR sees.
+`FMLink` models what a pair of **VHF/UHF FM transceivers** does to *audio*
+pushed into one radio's audio input and taken from the other's audio
+output. That's the interface an audio-interfaced modem actually has. It
+simulates the radio chain itself:
+
+```
+TX radio:  audio in -> full-scale clip -> TX high-pass [+ pre-emphasis]
+           -> deviation gain -> deviation limiter -> splatter filter -> FM modulator
+Channel:   path loss -> CNR in IF bandwidth -> time-varying fading (Doppler)
+           -> TX/RX frequency offset -> AWGN
+RX radio:  IF filter -> limiter/discriminator -> [de-emphasis] -> RX audio band-pass
+           -> squelch -> sound-card clock offset -> full-scale clip
+```
+
+FM's characteristic behavior comes out of that chain rather than being
+added on separately:
+
+- **The threshold** (SINAD collapsing below roughly 8-10 dB CNR).
+- **Threshold clicks** (2π phase slips in the discriminator).
+- **Mobile picket-fencing** (from fading that varies *within* a burst).
+- **Audio-path phase distortion** (all filters are minimum-phase, like
+  analog ones).
+
+Narrowband FM gives almost no FM SNR improvement: above threshold, SINAD
+tracks CNR roughly dB for dB.
+
+```python
+from ota_sim import FMLink, measure_sinad
+import numpy as np
+
+link = FMLink(port='mic', channel='narrow', base_cnr_db=10, seed=1)
+audio = np.sin(2 * np.pi * 1000 * np.arange(48000) / 48000)   # [-1, 1] full scale, 48 kHz
+rx_audio, delay_s = link.transmit(audio)   # burst + squelch tail
+print(link.last_info)   # cnr_db, phase_slips, squelch_open_fraction, min_fade_db
+```
+
+`port` is required, and neither value is the default:
+
+- `'mic'`: the microphone/speaker path, 300-3000 Hz with 6 dB/octave
+  pre- and de-emphasis.
+- `'data'`: the 6-pin mini-DIN data port, roughly flat from 10 Hz to
+  5 kHz with no emphasis.
+
+`channel` is `'narrow'` (12.5 kHz, ±2.5 kHz deviation) or `'wide'`
+(25 kHz, ±5 kHz). Either one can also be a dict with the same keys as
+`PORT_PRESETS`/`CHANNEL_PRESETS`, for a specific radio.
+
+Other knobs:
+
+- `audio_deviation_hz`: the radio's mic/data gain.
+- `fading` (`none`/`rayleigh`/`rician`) with `speed_kmh` and `freq_hz`
+  for the Doppler rate.
+- `freq_offset_hz`.
+- `clock_offset_ppm`.
+- `tx_keyup_ms`: audio lost at the start of every burst.
+- `squelch_cnr_db` (`None` = open), `squelch_open_ms`, and
+  `squelch_tail_ms`.
+
+Unlike `OTALink`, nothing is dropped at random: a lost burst is the
+result of fading or the squelch.
+
+Offline WAV tool for listening to and inspecting the output (mono 16-bit PCM):
+
+```bash
+python3 -m ota_sim.fmtool --port mic --cnr-db 10 in.wav out.wav
+python3 -m ota_sim.fmtool --port data --tone 1000 --cnr-db 8 \
+    --fading rayleigh --speed-kmh 50 --freq-mhz 440 out.wav   # also reports SINAD
+```
+
+`FMLink` is not wired into the network relay (`ota_sim.simulator`) yet.
+At 48 kHz, audio bursts are far larger than one UDP datagram can carry, so
+that needs chunked transport first.
+
 ## Testing
 
 ```bash
