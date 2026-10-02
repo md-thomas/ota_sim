@@ -40,10 +40,11 @@ rx_samples, delay_s = link.transmit(tx_samples)
 **As a network service** (`ota_sim.simulator`) - run it as its own
 process, and have two independent peer processes (anywhere reachable over
 the network - same machine, different machines, or the simulator on a
-third machine) send/receive UDP datagrams through it:
+third machine) connect to it over TCP and exchange bursts through it:
 
 ```bash
 python3 -m ota_sim.simulator --base-snr-db 15 --latency-ms 50
+python3 -m ota_sim.simulator --channel fm --port mic --base-snr-db 12   # FM radio audio
 ```
 
 `--distance-km` defaults to 1.0, matching `--reference-distance-km`'s
@@ -56,24 +57,47 @@ link at that distance.
 
 ### Wire format
 
-Datagrams sent to (and received from) the simulator are:
+TCP, port 9500 by default. Every message in both directions is a 4-byte
+big-endian length followed by that many bytes of body:
 
 ```
-bytes[0:16]   peer_id, UTF-8, null-padded/truncated to exactly 16 bytes
-bytes[16:]    opaque payload (e.g. raw complex64 IQ samples)
+first message from a peer:   its peer_id, UTF-8, at most 16 bytes
+every later message:         one burst of samples
+    --channel iq (default):  raw complex64 IQ samples
+    --channel fm:            mono 16-bit little-endian PCM at --sample-rate (48 kHz)
 ```
 
-The simulator learns each peer's real `(host, port)` from the first
-datagram it sees carrying that peer_id - no static peer-address
-configuration is needed, so it doesn't matter which machine each peer ends
-up running on. It supports exactly two distinct peer_ids at a time; a
-third, unexpected peer_id is logged and dropped rather than silently
-mis-routed.
+`ota_sim.simulator.SimClient` implements the client side (`connect()`,
+`send()`, plus an `on_burst` callback), so peers don't have to handle the
+framing themselves. Peers need no static address configuration, so it
+doesn't matter which machine each one runs on. The simulator supports
+exactly two distinct peer_ids at a time. A third, unexpected peer_id is
+logged and disconnected rather than silently mis-routed, and a peer that
+reconnects with the same peer_id replaces its old connection.
+
+It used to be UDP with one burst per datagram. Bursts outgrew that: one
+second of 48 kHz audio is 96 KB, over UDP's 64 KB datagram limit, and
+sending a burst as several datagrams would overflow a typical 208 KB
+socket receive buffer. TCP has no size cap and is ordered, lossless and
+flow-controlled. Burst loss is the simulated channel's job, not the
+transport's.
+
+**Airtime (FM only).** Each burst occupies the air for its real
+duration:
+
+- A peer's bursts air one after another, because a radio transmits one
+  thing at a time.
+- The far end receives a burst once it has fully aired, plus latency.
+- The link is half-duplex: a burst is lost if the receiving peer was
+  transmitting at any point while it aired.
+
+IQ bursts have no sample rate, so they take no airtime and never collide.
 
 ## Configuration
 
-All of `OTALink`'s parameters are exposed as CLI flags on
-`ota_sim.simulator` - see `python3 -m ota_sim.simulator -h`. Key ones:
+All of `OTALink`'s and `FMLink`'s parameters are exposed as CLI flags on
+`ota_sim.simulator`. See `python3 -m ota_sim.simulator -h`; the FM ones
+are grouped under `--channel fm`. Key ones:
 
 - `--distance-km` / `--freq-mhz` - drives the path-loss calculation.
 - `--base-snr-db` / `--reference-distance-km` - the SNR budget the link
@@ -158,9 +182,8 @@ python3 -m ota_sim.fmtool --port data --tone 1000 --cnr-db 8 \
     --fading rayleigh --speed-kmh 50 --freq-mhz 440 out.wav   # also reports SINAD
 ```
 
-`FMLink` is not wired into the network relay (`ota_sim.simulator`) yet.
-At 48 kHz, audio bursts are far larger than one UDP datagram can carry, so
-that needs chunked transport first.
+To use it over the network, run the relay with `--channel fm` (see
+[Wire format](#wire-format)).
 
 ## Testing
 

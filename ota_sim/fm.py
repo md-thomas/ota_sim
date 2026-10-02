@@ -240,6 +240,8 @@ class FMLink:
             raise ValueError(f"fading must be 'none', 'rayleigh' or 'rician', not {fading!r}")
         self.port = _resolve_preset(port, PORT_PRESETS, 'port')
         self.channel = _resolve_preset(channel, CHANNEL_PRESETS, 'channel')
+        self.port_name = port if isinstance(port, str) else 'custom'
+        self.channel_name = channel if isinstance(channel, str) else 'custom'
         self.distance_m = distance_m
         self.freq_hz = freq_hz
         self.reference_distance_m = reference_distance_m
