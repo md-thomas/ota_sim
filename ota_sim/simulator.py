@@ -42,9 +42,11 @@ import asyncio
 import concurrent.futures
 import struct
 import sys
+import threading
 
 import numpy as np
 
+from . import control
 from .channel import OTALink
 from .fm import CHANNEL_PRESETS, PORT_PRESETS, FMLink
 
@@ -291,10 +293,41 @@ class SimClient:
             self._writer.close()
 
 
-async def run(simulator, listen_host='0.0.0.0', listen_port=9500):
+def _start_command_reader(loop, on_line):
+    """Read typed lines on a daemon thread and hand each to on_line on the
+    event loop. A daemon thread rather than run_in_executor(input): a
+    pending input() in an executor thread would keep asyncio.run() from
+    exiting on Ctrl+C until Enter was pressed."""
+    try:
+        import readline  # noqa: F401 - gives input() history and line editing
+    except ImportError:
+        pass
+
+    def reader():
+        while True:
+            try:
+                line = input()
+            except (EOFError, OSError):
+                return
+            loop.call_soon_threadsafe(on_line, line)
+
+    threading.Thread(target=reader, daemon=True, name='ota_sim-commands').start()
+
+
+async def run(simulator, listen_host='0.0.0.0', listen_port=9500, commands=True):
+    """commands: read live /commands from stdin (see ota_sim.control). With
+    no stdin (e.g. started in the background) the reader just ends."""
     await simulator.start(listen_host, listen_port)
     simulator._log(f"[ota_sim] listening on {listen_host}:{simulator.address[1]} (TCP) - "
                    f"{simulator.describe()}")
+    if commands:
+        simulator._log("[ota_sim] type /help for live settings (/show, /cnr, /fading, ...)")
+
+        def on_line(line):
+            for message in control.handle_command(simulator.channel, line):
+                simulator._log(f"[ota_sim] {message}")
+
+        _start_command_reader(asyncio.get_running_loop(), on_line)
     try:
         await asyncio.Event().wait()
     finally:

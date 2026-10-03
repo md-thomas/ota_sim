@@ -294,11 +294,16 @@ class FMLink:
 
     def _init_fading(self):
         m = _FADING_SINUSOIDS
-        self._fd_hz = doppler_hz(self.speed_kmh, self.freq_hz)
         self._sos_cos_alpha = np.cos(self._rng.uniform(0, 2 * np.pi, m))
         self._sos_phase = self._rng.uniform(0, 2 * np.pi, m)
         self._los_cos_alpha = np.cos(self._rng.uniform(0, 2 * np.pi))
         self._los_phase = self._rng.uniform(0, 2 * np.pi)
+
+    @property
+    def _fd_hz(self):
+        # Computed on demand, not cached, so speed_kmh/freq_hz can be changed
+        # on a live link (ota_sim.control) and take effect on the next burst.
+        return doppler_hz(self.speed_kmh, self.freq_hz)
 
     # -- public helpers -----------------------------------------------------
     def nominal_cnr_db(self):

@@ -110,6 +110,31 @@ are grouped under `--channel fm`. Key ones:
 - `--latency-ms` / `--jitter-ms` - the tunable delay knobs.
 - `--seed` - reproducible runs.
 
+### Changing settings while it runs
+
+Type commands into the running simulator's window. Each change applies
+from the next burst; one already in flight finishes with the old values.
+
+```
+/show                         current settings (and the resulting nominal SNR/CNR)
+/cnr 10        (or /snr 10)   SNR/CNR at the reference distance
+/fading rayleigh 80           FM: none|rayleigh|rician [km/h];  IQ: /fading on|off
+/speed 5                      FM: mobile speed (Doppler rate)
+/distance 3   /freq 440       km, MHz
+/ppm 50   /offset 500         FM: sound-card clock offset, carrier error (Hz)
+/squelch off   /squelch 6     FM: squelch threshold (dB) or off
+/keyup 200   /squelch-open 30   /squelch-tail 100   (ms)
+/deviation 1500   /rician-k 6
+/drop 0.1                     IQ: probability a burst is lost
+/latency 50   /jitter 20      ms
+/help                         the full list
+```
+
+Settings the two stations must agree on (FM port, channel width, sample
+rate) can't be changed live. `ota_sim.control.handle_command(channel,
+line)` is the same thing as a function, for driving it from other code
+(a GUI, tests).
+
 ## FM radio link model (`ota_sim.fm`)
 
 `OTALink` adds noise to complex baseband IQ, which is what an SDR sees.
