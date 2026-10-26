@@ -129,7 +129,7 @@ class OTALink:
             # consistently biasing it up or down. Deliberately NOT
             # applying a random carrier phase rotation here, even though
             # a real fading channel would impose one: none of
-            # openwave_modem.py's demodulators (BPSK/QPSK/16-QAM) do any
+            # fmlink_modem.py's demodulators (BPSK/QPSK/16-QAM) do any
             # carrier phase recovery (no Costas loop, no differential
             # encoding - that's what the archived pi/4-QPSK GNU Radio
             # chain existed to solve). Measured directly: a pure phase
